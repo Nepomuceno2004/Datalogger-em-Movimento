@@ -43,6 +43,7 @@ include_directories(${CMAKE_SOURCE_DIR}/lib)
 add_executable(Datalogger 
     Datalogger.c 
     lib/ssd1306.c # Biblioteca para o display OLED
+    lib/mpu6050.c # Biblioteca para o MPU6050
 )
 
 pico_set_program_name(Datalogger "Datalogger")

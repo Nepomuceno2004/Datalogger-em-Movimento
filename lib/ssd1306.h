@@ -5,9 +5,9 @@
 #define WIDTH 128
 #define HEIGHT 64
 
-#define I2C_PORT i2c1
-#define I2C_SDA 6
-#define I2C_SCL 7
+#define I2C_PORT_DISP i2c1
+#define I2C_SDA_DISP 14
+#define I2C_SCL_DISP 15
 #define endereco 0x3C
 
 typedef enum {
