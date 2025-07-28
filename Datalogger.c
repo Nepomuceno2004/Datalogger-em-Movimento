@@ -120,7 +120,7 @@ void vCapturaTask(void *params)
             printf("Temp: %.2f °C\n", temp_c);
             printf("---------------------------\n");
 
-            vTaskDelay(pdMS_TO_TICKS(800)); // Delay to avoid flooding the output
+            vTaskDelay(pdMS_TO_TICKS(500)); // Delay to avoid flooding the output
 
             capture = false; // Alterna o estado de captura
 
@@ -159,12 +159,12 @@ void vCapturaTask(void *params)
 
             // --- Finaliza a escrita no SD ---
             printf("[SD] Dados gravados no arquivo %s\n", nome_arquivo);
-            vTaskDelay(pdMS_TO_TICKS(800)); // Delay to avoid flooding the output
+            vTaskDelay(pdMS_TO_TICKS(500)); // Delay to avoid flooding the output
 
             sd_writing = false; // Indica que o sistema terminou de escrever no SD
             ready = true;       // Indica que o sistema está pronto para capturar dados
 
-            vTaskDelay(pdMS_TO_TICKS(2000)); // Delay to avoid flooding the output
+            vTaskDelay(pdMS_TO_TICKS(1000)); // Delay to avoid flooding the output
         }
         vTaskDelay(pdMS_TO_TICKS(100)); // Delay to avoid flooding the output
     }
@@ -359,7 +359,7 @@ void vMontagemTask(void *params)
 
                     printf("[MONTAGEM] Cartão SD montado com sucesso.\n");
 
-                    vTaskDelay(pdMS_TO_TICKS(800));         // Delay para evitar flooding
+                    vTaskDelay(pdMS_TO_TICKS(500));         // Delay para evitar flooding
                     sd_mounting = false;                    // Indica que o sistema terminou de montar/desmontar o SD
                     ready = true;                           // Indica que o sistema está pronto para capturar dados
                     numero_amostra = criar_cabecalho_csv(); // Cria o cabeçalho do CSV se não existir
@@ -368,6 +368,8 @@ void vMontagemTask(void *params)
                 {
                     printf("[ERRO] Falha ao montar o cartão: %s (%d)\n", FRESULT_str(fr), fr);
                     error = true;
+                    pSD->mounted = false;
+                    sd_mount = false;
                 }
             }
             else
@@ -381,7 +383,7 @@ void vMontagemTask(void *params)
                     sd_mount = false;
                     printf("[DESMONTAGEM] Cartão SD desmontado com sucesso.\n");
 
-                    vTaskDelay(pdMS_TO_TICKS(800)); // Delay para evitar flooding
+                    vTaskDelay(pdMS_TO_TICKS(500)); // Delay para evitar flooding
 
                     sd_mounting = false; // Indica que o sistema terminou de montar/desmontar o SD
                     ready = true;        // Indica que o sistema está pronto para capturar dados
