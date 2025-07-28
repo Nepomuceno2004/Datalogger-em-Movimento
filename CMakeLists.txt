@@ -40,10 +40,14 @@ pico_sdk_init()
 
 include_directories(${CMAKE_SOURCE_DIR}/lib)
 
+add_subdirectory(lib/FatFs_SPI)    
+
 add_executable(Datalogger 
     Datalogger.c 
     lib/ssd1306.c # Biblioteca para o display OLED
     lib/mpu6050.c # Biblioteca para o MPU6050
+    lib/hw_config.c
+
 )
 
 pico_set_program_name(Datalogger "Datalogger")
@@ -58,6 +62,9 @@ target_link_libraries(Datalogger
         hardware_gpio
         FreeRTOS-Kernel 
         FreeRTOS-Kernel-Heap4
+        FatFs_SPI
+        hardware_clocks
+        hardware_adc
 )
 
 target_include_directories(Datalogger PRIVATE
