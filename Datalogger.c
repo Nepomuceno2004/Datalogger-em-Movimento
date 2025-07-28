@@ -44,7 +44,7 @@ volatile bool error = false;
 volatile bool sd_mount = false;
 volatile bool sd_mounting = false;
 volatile bool sd_writing = false;
-volatile int cont = 0;
+volatile int numero_amostra = 0;
 
 void gpio_irq_handler(uint gpio, uint32_t events)
 {
@@ -103,9 +103,6 @@ void vCapturaTask(void *params)
 
             mpu6050_read_raw(I2C_PORT, MPU6050_DEFAULT_ADDR, acel, giro, &temp);
 
-            // Incrementa o contador de leituras
-            cont++;
-
             // --- Cálculos para Acelerômetro ---
             float ax = acel[0] / 16384.0f;
             float ay = acel[1] / 16384.0f;
@@ -123,7 +120,7 @@ void vCapturaTask(void *params)
             printf("Temp: %.2f °C\n", temp_c);
             printf("---------------------------\n");
 
-            vTaskDelay(pdMS_TO_TICKS(500)); // Delay to avoid flooding the output
+            vTaskDelay(pdMS_TO_TICKS(800)); // Delay to avoid flooding the output
 
             capture = false; // Alterna o estado de captura
 
@@ -138,12 +135,17 @@ void vCapturaTask(void *params)
             {
                 char linha[128];
                 snprintf(linha, sizeof(linha), "%d;%.2f;%.2f;%.2f;%.2f;%.2f;%.2f\n",
-                         cont, ax, ay, az, gx, gy, gz);
+                         numero_amostra, ax, ay, az, gx, gy, gz);
 
                 UINT bw;
                 fr = f_write(&file, linha, strlen(linha), &bw);
 
-                if (fr != FR_OK)
+                if (fr == FR_OK)
+                {
+                    // Incrementa o numero_amostra ador de leituras
+                    numero_amostra++;
+                }
+                else
                 {
                     printf("[ERRO] Falha ao escrever no arquivo: %d\n", fr);
                 }
@@ -157,7 +159,7 @@ void vCapturaTask(void *params)
 
             // --- Finaliza a escrita no SD ---
             printf("[SD] Dados gravados no arquivo %s\n", nome_arquivo);
-            vTaskDelay(pdMS_TO_TICKS(500)); // Delay to avoid flooding the output
+            vTaskDelay(pdMS_TO_TICKS(800)); // Delay to avoid flooding the output
 
             sd_writing = false; // Indica que o sistema terminou de escrever no SD
             ready = true;       // Indica que o sistema está pronto para capturar dados
@@ -208,26 +210,126 @@ void vLedsTask(void *params)
     }
 }
 
-void criar_cabecalho_csv()
+void vDisplayTask(void *params)
+{
+    ssd1306_t ssd;
+    init_Display(&ssd);
+
+    while (true)
+    {
+        ssd1306_fill(&ssd, false); // Limpa a tela
+
+        if (!sd_mount)
+        {
+            ssd1306_draw_string(&ssd, "Monte o SD", 5, 30);
+        }
+        else if (sd_mounting)
+        {
+            if (sd_mount)
+            {
+                ssd1306_draw_string(&ssd, "Montando SD...", 5, 30);
+            }
+            else
+            {
+                ssd1306_draw_string(&ssd, "Desmontando SD...", 5, 30);
+            }
+        }
+        else if (ready && sensor_state)
+        {
+            ssd1306_draw_string(&ssd, "Sistema", 5, 20);
+            ssd1306_draw_string(&ssd, "Ligado", 5, 30);
+        }
+        else if (ready)
+        {
+            ssd1306_draw_string(&ssd, "Sistema", 5, 20);
+            ssd1306_draw_string(&ssd, "Pronto", 5, 30);
+        }
+        else if (capture)
+        {
+            ssd1306_draw_string(&ssd, "Sensor", 5, 20);
+            ssd1306_draw_string(&ssd, "Capturando...", 5, 30);
+        }
+        else if (error)
+        {
+            ssd1306_draw_string(&ssd, "Erro no SD Card", 5, 30);
+        }
+        else if (sd_writing)
+        {
+            ssd1306_draw_string(&ssd, "Gravando SD...", 5, 30);
+        }
+        else
+        {
+            ssd1306_draw_string(&ssd, "Estado desconhecido", 5, 30);
+        }
+        ssd1306_send_data(&ssd);        // Envia os dados para o display
+        vTaskDelay(pdMS_TO_TICKS(100)); // Delay para evitar flooding
+    }
+}
+
+int criar_cabecalho_csv()
 {
     FIL file;
     FRESULT fr;
 
-    fr = f_open(&file, nome_arquivo, FA_WRITE | FA_CREATE_NEW); // só cria se não existir
+    // Tenta criar o arquivo NOVO com cabeçalho
+    fr = f_open(&file, nome_arquivo, FA_WRITE | FA_CREATE_NEW);
     if (fr == FR_OK)
     {
         const char *cabecalho = "numero_amostra;accel_x;accel_y;accel_z;giro_x;giro_y;giro_z\n";
         UINT bw;
         f_write(&file, cabecalho, strlen(cabecalho), &bw);
         f_close(&file);
+        printf("[INFO] Arquivo criado com cabeçalho.\n");
+        return 1; // começa do zero
     }
     else if (fr == FR_EXIST)
     {
-        printf("[INFO] Arquivo %s já existe, não foi necessário criar o cabeçalho.\n", nome_arquivo);
+        printf("[INFO] Arquivo %s já existe. Lendo última amostra...\n", nome_arquivo);
+
+        // Abre para leitura
+        fr = f_open(&file, nome_arquivo, FA_READ);
+        if (fr != FR_OK)
+        {
+            printf("[ERRO] Falha ao abrir o arquivo existente para leitura: %d\n", fr);
+            return numero_amostra;
+        }
+
+        // Move o ponteiro para o fim do arquivo
+        f_lseek(&file, f_size(&file));
+
+        // Começa a voltar até ennumero_amostra rar a última quebra de linha
+        char c;
+        DWORD pos = f_tell(&file);
+        int found_newline = 0;
+
+        while (pos > 0)
+        {
+            pos--;
+            f_lseek(&file, pos);
+            f_read(&file, &c, 1, NULL);
+            if (c == '\n' && found_newline)
+                break;
+            if (c == '\n')
+                found_newline = 1;
+        }
+
+        // Agora lê a última linha
+        char ultima_linha[128] = {0};
+        UINT br;
+        f_read(&file, ultima_linha, sizeof(ultima_linha) - 1, &br);
+        f_close(&file);
+
+        // A linha deve estar no formato: numero_amostra;...
+        int ultimo_numero = 0;
+        sscanf(ultima_linha, "%d", &ultimo_numero);
+        printf("[INFO] Último número de amostra: %d\n", ultimo_numero);
+
+        return ultimo_numero + 1;
     }
     else
     {
-        printf("[ERRO] Falha ao criar o arquivo: %d\n", fr);
+        printf("[ERRO] Falha ao criar ou abrir o arquivo: %d\n", fr);
+        return numero_amostra;
     }
 }
 
@@ -252,15 +354,15 @@ void vMontagemTask(void *params)
                 if (fr == FR_OK)
                 {
                     error = false;
-                    sd_mount = true;
                     pSD->mounted = true;
+                    sd_mount = true;
 
                     printf("[MONTAGEM] Cartão SD montado com sucesso.\n");
 
-                    vTaskDelay(pdMS_TO_TICKS(500)); // Delay para evitar flooding
-                    sd_mounting = false;            // Indica que o sistema terminou de montar/desmontar o SD
-                    ready = true;                   // Indica que o sistema está pronto para capturar dados
-                    criar_cabecalho_csv();          // Cria o cabeçalho do CSV se não existir
+                    vTaskDelay(pdMS_TO_TICKS(800));         // Delay para evitar flooding
+                    sd_mounting = false;                    // Indica que o sistema terminou de montar/desmontar o SD
+                    ready = true;                           // Indica que o sistema está pronto para capturar dados
+                    numero_amostra = criar_cabecalho_csv(); // Cria o cabeçalho do CSV se não existir
                 }
                 else
                 {
@@ -274,12 +376,12 @@ void vMontagemTask(void *params)
                 if (fr == FR_OK)
                 {
                     error = false;
-                    sd_mount = false;
                     pSD->mounted = false;
                     pSD->m_Status |= STA_NOINIT;
+                    sd_mount = false;
                     printf("[DESMONTAGEM] Cartão SD desmontado com sucesso.\n");
 
-                    vTaskDelay(pdMS_TO_TICKS(500)); // Delay para evitar flooding
+                    vTaskDelay(pdMS_TO_TICKS(800)); // Delay para evitar flooding
 
                     sd_mounting = false; // Indica que o sistema terminou de montar/desmontar o SD
                     ready = true;        // Indica que o sistema está pronto para capturar dados
@@ -333,6 +435,7 @@ int main()
     xTaskCreate(vCapturaTask, "Captura Task", 512, NULL, 1, NULL);
     xTaskCreate(vLedsTask, "Leds Task", 256, NULL, 1, NULL);
     xTaskCreate(vMontagemTask, "Montagem Task", 512, NULL, 1, NULL);
+    xTaskCreate(vDisplayTask, "Display Task", 512, NULL, 1, NULL);
 
     // Inicia o agendador
     vTaskStartScheduler();
