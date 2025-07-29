@@ -26,7 +26,6 @@ static const char *nome_arquivo = "dados.csv";
 #define LED_PIN_GREEN 11    // verde
 #define LED_PIN_BLUE 12     // azul
 #define LED_PIN_RED 13      // vermelho
-#define BUZZER_PIN 21       // pino do buzzer
 #define JOYSTICK_BTN_PIN 22 // pino do botão do joystick
 
 #define I2C_PORT i2c0
